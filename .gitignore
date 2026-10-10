@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# 运行痕迹
+logs/
+katago/logs/
+*.log
+go_ai_katago.log
+
+# 构建缓存
+.build/
+*.part
+
+# 系统
+.DS_Store
+Thumbs.db
