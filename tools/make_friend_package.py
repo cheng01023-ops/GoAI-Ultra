@@ -55,12 +55,19 @@ PKG_NAMES = {"windows": "GoAI-Ultra-Windows",
 PLATFORM_LABEL = {"windows": "Windows", "macos": "macOS", "linux": "Linux"}
 
 # ----------------------------------------------------------------- 启动脚本
-# 注意: Windows 批处理(.bat)里绝对不能出现非 ASCII 字符 —— cmd.exe 按系统 OEM
-# 代码页(中文 Windows 是 GBK/CP936)解析批处理文件, 写 UTF-8 中文会显示成
-# "鍥存嬬汉鏈哄规垬" 这样的乱码; 纯 ASCII 则与代码页无关, 永远正确。
+# ---------------------------------------------------------------------------
+# Windows 批处理(.bat)的编码规则 —— 这是踩过坑的地方, 别乱改:
+#   1) 文件用 UTF-8 + CRLF 保存;
+#   2) 必须在输出任何中文之前先执行 chcp 65001, 让 cmd 用 UTF-8 解析后面的字节,
+#      否则中文 Windows 会按 GBK 解析出"鍥存嬬汉鏈哄规垬"这种乱码;
+#   3) 全程用 goto 标签, 不要用 ( ) 代码块 —— cmd 会把整个括号块预读解码,
+#      块内的中文可能在切换代码页之前就被解析, 从而再次乱码;
+#   4) 退出前 chcp 936 还原代码页, 否则"请按任意键继续"这句系统提示会乱码;
+#   5) 另备一份纯 ASCII 的 SAFE 脚本, 万一某台机器切不了 UTF-8 也能启动。
+# ---------------------------------------------------------------------------
 BAT_MAIN = """@echo off
-rem GoAI Ultra - Go / Weiqi game vs KataGo AI  (double-click to play)
-rem NOTE: keep this file ASCII-only, otherwise cmd.exe shows mojibake.
+rem GoAI Ultra - one click start (Windows). Do not reorder the lines below.
+rem UTF-8 + CRLF + chcp 65001 before any Chinese text; labels instead of ( ) blocks.
 chcp 65001 >nul
 cd /d "%~dp0"
 set PYTHONUTF8=1
@@ -68,60 +75,154 @@ set PYTHONUTF8=1
 set "PY="
 where py >nul 2>nul && set "PY=py -3"
 if not defined PY where python >nul 2>nul && set "PY=python"
-if not defined PY (
-  echo [X] Python not found.
-  echo     Please install Python 3.9+ from https://www.python.org/downloads/
-  echo     During installation, check "Add Python to PATH".
-  pause
-  exit /b 1
-)
+if not defined PY goto :nopyt
 
 %PY% -c "import go_ai,sys; ok,_=go_ai.check_installation(); sys.exit(0 if ok else 1)" 2>nul
-if errorlevel 1 (
-  echo [*] Preparing KataGo engine ^(needs internet^) ...
-  %PY% setup_katago.py
-  if errorlevel 1 ( echo [X] Setup failed. Send the text above to the author. & pause & exit /b 1 )
-)
+if not errorlevel 1 goto :play
 
-echo [*] Starting the game ... ^(you play Black, click an intersection^)
+echo.
+echo [*] 首次运行: 正在准备 KataGo 引擎与神经网络权重 (需要联网) ...
+echo.
+%PY% setup_katago.py
+if errorlevel 1 goto :setuperr
+
+:play
+echo.
+echo [*] 开始下棋: 你执黑先行, 鼠标点击交叉点落子
+echo.
 %PY% go_ai.py
-if errorlevel 1 ( echo Program exited with an error. Try CHECK-Windows.bat to diagnose. & pause )
+if errorlevel 1 goto :apperr
+goto :done
+
+:apperr
+echo.
+echo [X] 程序异常退出。可双击 CHECK-Windows.bat 查看诊断信息。
+goto :done
+
+:setuperr
+echo.
+echo [X] 准备失败, 请把上面的信息发给分享给你的人。
+goto :done
+
+:nopyt
+echo [X] 没有找到 Python。
+echo     请先安装 Python 3.9+ : https://www.python.org/downloads/
+echo     安装时务必勾选 "Add Python to PATH"
+
+:done
+chcp 936 >nul
+pause
+exit /b 0
 """
 BAT_FULLUI = """@echo off
 rem GoAI Ultra - full GUI (9/13/19 board, handicap, score estimate, SGF export)
 chcp 65001 >nul
 cd /d "%~dp0"
 set PYTHONUTF8=1
+
 set "PY="
 where py >nul 2>nul && set "PY=py -3"
 if not defined PY where python >nul 2>nul && set "PY=python"
-if not defined PY ( echo [X] Python not found. Install Python 3.9+ first. & pause & exit /b 1 )
+if not defined PY goto :nopyt
+
+echo.
+echo [*] 启动完整版界面 (9/13/19 路、让子、形势判断、SGF 棋谱导出)
+echo.
 %PY% play.py
-if errorlevel 1 pause
+goto :done
+
+:nopyt
+echo [X] 没有找到 Python, 请先安装 Python 3.9+ 。
+
+:done
+chcp 936 >nul
+pause
+exit /b 0
 """
 BAT_SELFCHECK = """@echo off
 rem GoAI Ultra - environment self check (GTP / coordinates / rules / GUI)
 chcp 65001 >nul
 cd /d "%~dp0"
 set PYTHONUTF8=1
+
 set "PY="
 where py >nul 2>nul && set "PY=py -3"
 if not defined PY where python >nul 2>nul && set "PY=python"
-if not defined PY ( echo [X] Python not found. Install Python 3.9+ first. & pause & exit /b 1 )
+if not defined PY goto :nopyt
+
+echo.
+echo [*] 环境自检: GTP 通信 / 坐标转换 / 围棋规则 / 图形界面
+echo.
 %PY% test_go_ai.py %*
+goto :done
+
+:nopyt
+echo [X] 没有找到 Python, 请先安装 Python 3.9+ 。
+
+:done
+chcp 936 >nul
 pause
+exit /b 0
 """
 BAT_SETUP = """@echo off
 rem GoAI Ultra - install / repair the KataGo engine and neural network weights
 chcp 65001 >nul
 cd /d "%~dp0"
 set PYTHONUTF8=1
+
 set "PY="
 where py >nul 2>nul && set "PY=py -3"
 if not defined PY where python >nul 2>nul && set "PY=python"
-if not defined PY ( echo [X] Python not found. Install Python 3.9+ first. & pause & exit /b 1 )
+if not defined PY goto :nopyt
+
+echo.
+echo [*] 安装/修复 KataGo 引擎与权重
+echo.
 %PY% setup_katago.py %*
+goto :done
+
+:nopyt
+echo [X] 没有找到 Python, 请先安装 Python 3.9+ 。
+
+:done
+chcp 936 >nul
 pause
+exit /b 0
+"""
+BAT_SAFE = """@echo off
+rem GoAI Ultra - SAFE launcher (pure ASCII). Use this if the Chinese text in
+rem START-Windows.bat shows as garbage on your machine.
+chcp 65001 >nul
+cd /d "%~dp0"
+set PYTHONUTF8=1
+
+set "PY="
+where py >nul 2>nul && set "PY=py -3"
+if not defined PY where python >nul 2>nul && set "PY=python"
+if not defined PY goto :nopyt
+
+%PY% -c "import go_ai,sys; ok,_=go_ai.check_installation(); sys.exit(0 if ok else 1)" 2>nul
+if not errorlevel 1 goto :play
+
+echo [*] Preparing KataGo engine (needs internet) ...
+%PY% setup_katago.py
+if errorlevel 1 goto :setuperr
+
+:play
+echo [*] Starting the game ... (you play Black, click an intersection)
+%PY% go_ai.py
+goto :done
+
+:setuperr
+echo [X] Setup failed. Send the text above to the author.
+goto :done
+
+:nopyt
+echo [X] Python not found. Install Python 3.9+ from https://www.python.org/downloads/
+
+:done
+pause
+exit /b 0
 """
 SH_MAIN = """#!/bin/bash
 # KataGo 围棋人机对战 —— 一键开始
@@ -161,11 +262,12 @@ read -r -p "按回车键关闭窗口..." _
 
 def launchers_for(platform: str) -> dict:
     if platform == "windows":
-        # 中文名 + 英文名各一份: 万一解压工具没保留 UTF-8 文件名, 用英文名照样能启动
+        # 中文名 + 英文名各一份 (文件名乱码时用英文名), 外加一个纯 ASCII 保险脚本
         return {"START-Windows.bat": BAT_MAIN, "一键开始下棋.bat": BAT_MAIN,
                 "FULLUI-Windows.bat": BAT_FULLUI, "完整版界面.bat": BAT_FULLUI,
                 "CHECK-Windows.bat": BAT_SELFCHECK, "自检.bat": BAT_SELFCHECK,
-                "REPAIR-Windows.bat": BAT_SETUP, "安装修复KataGo.bat": BAT_SETUP}
+                "REPAIR-Windows.bat": BAT_SETUP, "安装修复KataGo.bat": BAT_SETUP,
+                "SAFE-START-Windows.bat": BAT_SAFE}
     names = {"一键开始下棋.sh": SH_MAIN, "自检.sh": SH_SELFCHECK, "安装修复KataGo.sh": SH_SETUP}
     if platform == "macos":
         names.update({"一键开始下棋.command": SH_MAIN, "START-macOS.command": SH_MAIN,
@@ -324,8 +426,14 @@ def copy_source_files(platform: str, dest: Path) -> None:
             raise SystemExit("项目里没有权重文件, 请先运行 python3 setup_katago.py")
         model = models[0]
     shutil.copy2(model, dest / "katago" / "models" / model.name)
-    shutil.copy2(PROJECT / "katago" / "configs" / "default_gtp.cfg",
-                 dest / "katago" / "configs" / "default_gtp.cfg")
+    cfg_src = PROJECT / "katago" / "configs" / "default_gtp.cfg"
+    cfg_dst = dest / "katago" / "configs" / "default_gtp.cfg"
+    if platform == "windows":
+        # Windows 上统一用 CRLF 换行 (记事本打开也正常), 与人工修复版一致
+        text = cfg_src.read_text(encoding="utf-8")
+        cfg_dst.write_bytes(text.replace("\r\n", "\n").replace("\n", "\r\n").encode("utf-8"))
+    else:
+        shutil.copy2(cfg_src, cfg_dst)
 
 
 def make_zip(folder: Path) -> Path:
@@ -352,6 +460,22 @@ def make_zip(folder: Path) -> Path:
     return zip_path
 
 
+def _write_bat(path: Path, content: str) -> None:
+    """写 Windows 批处理: CRLF 换行; 含中文时必须是 UTF-8 且先 chcp 65001。"""
+    body = content.replace("\r\n", "\n").replace("\n", "\r\n")
+    lines = body.splitlines()
+    try:
+        body.encode("ascii")
+        path.write_bytes(body.encode("ascii"))          # 纯 ASCII: 与代码页无关, 最安全
+        return
+    except UnicodeEncodeError:
+        pass
+    head = "\n".join(lines[:8])
+    if "chcp 65001" not in head:
+        raise SystemExit(path.name + ": 含中文的批处理必须在开头先 chcp 65001, 否则 Windows 上会乱码")
+    path.write_bytes(body.encode("utf-8"))              # UTF-8 (不加 BOM) + CRLF
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="生成发给朋友的精简包")
     parser.add_argument("--platform", default="windows", choices=["windows", "macos", "linux"])
@@ -374,13 +498,7 @@ def main(argv=None) -> int:
     for name, content in names.items():
         path = folder / name
         if name.lower().endswith(".bat"):
-            # 批处理: 纯 ASCII + CRLF, 这样在中文/任何区域的 Windows 上都不会乱码
-            body = content.replace("\n", "\r\n")
-            try:
-                body.encode("ascii")
-            except UnicodeEncodeError as exc:
-                raise SystemExit("批处理模板里出现了非 ASCII 字符, Windows 上会乱码: " + str(exc))
-            path.write_bytes(body.encode("ascii"))
+            _write_bat(path, content)
         else:
             path.write_text(content, encoding="utf-8")
             if name.endswith((".command", ".sh")):
