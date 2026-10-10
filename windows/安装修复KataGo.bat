@@ -1,10 +1,11 @@
 @echo off
-rem 安装 / 修复 KataGo 引擎与权重
+rem GoAI Ultra - install / repair the KataGo engine and neural network weights
 chcp 65001 >nul
 cd /d "%~dp0"
+set PYTHONUTF8=1
 set "PY="
 where py >nul 2>nul && set "PY=py -3"
 if not defined PY where python >nul 2>nul && set "PY=python"
-if not defined PY ( echo 没有找到 Python, 请先安装 Python 3.9+ & pause & exit /b 1 )
+if not defined PY ( echo [X] Python not found. Install Python 3.9+ first. & pause & exit /b 1 )
 %PY% setup_katago.py %*
 pause
